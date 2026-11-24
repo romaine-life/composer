@@ -14,6 +14,8 @@ type Styles struct {
 	Text        tcell.Style
 	Placeholder tcell.Style
 	Cursor      tcell.Style
+	// Atom is how an atom (SetAtoms) is drawn; left unset, as the message is.
+	Atom tcell.Style
 	// Placeholder text, shown while nothing is typed; "" shows none.
 	PlaceholderText string
 }
@@ -30,6 +32,7 @@ type cell struct {
 	col   int
 	width int
 	style tcell.Style
+	off   int // Its byte offset in the text it was placed from.
 }
 
 // shown lays out the rows on screen, each its graphemes within the box's width.
@@ -40,10 +43,20 @@ func (b *Box) shown(st Styles) [][]cell {
 		out[0] = cells(st.PlaceholderText, b.width, st.Placeholder)
 		return out
 	}
+	atom := st.Atom
+	if atom == tcell.StyleDefault {
+		atom = st.Text
+	}
 	rows := b.rows()
 	for i := range h {
 		r := rows[b.top+i]
+		atoms := b.atomsIn(b.paras[r.para])
 		out[i] = cells(b.paras[r.para][r.start:r.end], b.width, st.Text)
+		for k, c := range out[i] {
+			if in(atoms, r.start+c.off) {
+				out[i][k].style = atom
+			}
+		}
 	}
 	return out
 }
@@ -51,19 +64,21 @@ func (b *Box) shown(st Styles) [][]cell {
 // cells places s's graphemes from column 0, up to w columns.
 func cells(s string, w int, style tcell.Style) []cell {
 	var out []cell
-	col := 0
+	col, off := 0, 0
 	state := -1
 	for len(s) > 0 {
 		g, rest, boundaries, st := uniseg.StepString(s, state)
 		gw := boundaries >> uniseg.ShiftWidth
 		s, state = rest, st
+		at := off
+		off += len(g)
 		if gw == 0 {
 			continue
 		}
 		if col+gw > w {
 			break
 		}
-		out = append(out, cell{g, col, gw, style})
+		out = append(out, cell{g, col, gw, style, at})
 		col += gw
 	}
 	return out

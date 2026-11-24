@@ -5,6 +5,7 @@
 package composer
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 	"unicode"
@@ -42,6 +43,8 @@ type Box struct {
 	undo, redo []snapshot
 	typing     bool // The last change was typed text, which more typing joins.
 	lastTyped  rune
+
+	atom *regexp.Regexp // What an atom is (SetAtoms), or nil for none.
 }
 
 type snapshot struct {
@@ -115,6 +118,24 @@ func (b *Box) Insert(s string) {
 	b.insert(s)
 }
 
+// Replace puts text in place of bytes start to end of a line of the message, as one
+// change, with the cursor after it: as an app turns a word typed into what was
+// picked for it. The range is kept within the line, and an atom it cuts into goes
+// whole.
+func (b *Box) Replace(line, start, end int, s string) {
+	line = min(max(0, line), len(b.paras)-1)
+	p := b.paras[line]
+	start = min(max(0, start), len(p))
+	end = min(max(start, end), len(p))
+	b.save(false, 0)
+	b.remove(line, start, line, end)
+	b.line, b.pos = line, b.snap(b.paras[line], start)
+	if s = clean(s); s != "" {
+		b.insert(s)
+	}
+	b.moved()
+}
+
 // Paragraph is the cursor's line of the message and the cursor's byte offset in
 // it, for an app that inserts with regard to the words around the cursor.
 func (b *Box) Paragraph() (text string, at int) {
@@ -135,6 +156,7 @@ func (b *Box) SetPosition(line, offset int) {
 	if b.pos < len(p) {
 		b.pos = before(p, b.pos+1)
 	}
+	b.pos = b.snap(p, b.pos)
 	b.moved()
 }
 
@@ -246,8 +268,10 @@ func (b *Box) moved() {
 }
 
 // remove deletes from paragraph l1 offset p1 to paragraph l2 offset p2, the cursor
-// left where the deletion started.
+// left where the deletion started. An atom it would cut into goes whole.
 func (b *Box) remove(l1, p1, l2, p2 int) {
+	p1 = b.snap(b.paras[l1], p1)
+	p2 = b.snapEnd(b.paras[l2], p2)
 	if l1 == l2 && p1 == p2 {
 		return
 	}

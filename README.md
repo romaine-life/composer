@@ -47,7 +47,16 @@ view := box.View(styles, true)         // or as text for a Bubble Tea view
 `Height` is the rows it takes, `Top` the message's first row shown, `Cursor` where
 its cursor is within them, `Click` places the cursor at a cell, `Position` and
 `SetPosition` give and set it as a line of the message and an offset, `Paragraph` is
-the cursor's line, and `SetValue` and `Value` keep a draft.
+the cursor's line, `Replace` puts text in place of part of a line as one change, and
+`SetValue` and `Value` keep a draft.
+
+`SetAtoms(pattern)` makes each stretch of text the pattern matches an atom, one unit:
+the cursor steps over it and never stops inside it, Backspace and Delete take it
+whole, a deletion that would cut into it takes all of it, it wraps whole unless it is
+wider than a row, and it is drawn in `Styles.Atom`. Atoms are the message's text, so
+`Value`, `SetValue`, a paste and undo carry them with nothing else to keep. at-claude
+uses them for the objects picked from its menu
+([ATC-191](https://openproject.home.romaine.life/wp/ATC-191)).
 
 Text wraps at the places Unicode allows a line break, a word wider than a row is
 split, spaces stay at the end of the row they follow, and a character made of

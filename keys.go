@@ -111,7 +111,7 @@ func (b *Box) runeKey(r rune, mod tcell.ModMask) Result {
 
 func (b *Box) left() {
 	if b.pos > 0 {
-		b.pos = before(b.paras[b.line], b.pos)
+		b.pos = b.back(b.paras[b.line], b.pos)
 	} else if b.line > 0 {
 		b.line--
 		b.pos = len(b.paras[b.line])
@@ -121,7 +121,7 @@ func (b *Box) left() {
 
 func (b *Box) right() {
 	if b.pos < len(b.paras[b.line]) {
-		b.pos = after(b.paras[b.line], b.pos)
+		b.pos = b.forward(b.paras[b.line], b.pos)
 	} else if b.line < len(b.paras)-1 {
 		b.line++
 		b.pos = 0
@@ -173,7 +173,7 @@ func (b *Box) wordLeft() {
 		b.left()
 		return
 	}
-	b.pos = wordStart(b.paras[b.line], b.pos)
+	b.pos = b.snap(b.paras[b.line], wordStart(b.paras[b.line], b.pos))
 	b.moved()
 }
 
@@ -182,7 +182,7 @@ func (b *Box) wordRight() {
 		b.right()
 		return
 	}
-	b.pos = wordEnd(b.paras[b.line], b.pos)
+	b.pos = b.snapEnd(b.paras[b.line], wordEnd(b.paras[b.line], b.pos))
 	b.moved()
 }
 

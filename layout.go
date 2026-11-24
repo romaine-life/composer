@@ -23,7 +23,7 @@ func (b *Box) textWidth() int {
 func (b *Box) rows() []row {
 	var all []row
 	for i, p := range b.paras {
-		for _, s := range wrap(p, b.textWidth()) {
+		for _, s := range wrap(p, b.textWidth(), b.atomsIn(p)) {
 			all = append(all, row{i, s[0], s[1]})
 		}
 	}
@@ -34,8 +34,9 @@ func (b *Box) rows() []row {
 // allows a line break (after a word's trailing spaces), and inside a word only when
 // the word alone is wider than a row. Spaces never start a row: they stay at the end
 // of the one they follow, past its edge if they must, as a word processor keeps them.
-// A grapheme (an emoji with its skin tone, a letter with its accents) is never split.
-func wrap(p string, w int) [][2]int {
+// A grapheme (an emoji with its skin tone, a letter with its accents) is never split,
+// nor an atom (atoms, its byte ranges in p) unless it alone is wider than a row.
+func wrap(p string, w int, atoms [][]int) [][2]int {
 	var rows [][2]int
 	start, col := 0, 0
 	brk, brkCol := -1, 0 // The last break opportunity in this row, and its column.
@@ -56,7 +57,7 @@ func wrap(p string, w int) [][2]int {
 		}
 		col += gw
 		off += len(g)
-		if boundaries&uniseg.MaskLine == uniseg.LineCanBreak {
+		if _, _, in := within(atoms, off); !in && boundaries&uniseg.MaskLine == uniseg.LineCanBreak {
 			brk, brkCol = off, col
 		}
 		rest, state = next, st
@@ -137,7 +138,7 @@ func (b *Box) at(rows []row, i, col int) int {
 		best = off
 		rest, state = next, st
 	}
-	return best
+	return b.snap(p, best)
 }
 
 // Rows is how many rows the whole message wraps to.
