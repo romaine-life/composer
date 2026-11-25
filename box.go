@@ -130,9 +130,11 @@ func (b *Box) Replace(line, start, end int, s string) {
 	p := b.paras[line]
 	start = min(max(0, start), len(p))
 	end = min(max(start, end), len(p))
+	// Where the removal starts, an atom it cuts into taken whole, as remove does.
+	start = b.snap(p, start)
 	b.save(false, 0)
 	b.remove(line, start, line, end)
-	b.line, b.pos = line, b.snap(b.paras[line], start)
+	b.line, b.pos = line, start
 	if s = clean(s); s != "" {
 		b.insert(s)
 	}

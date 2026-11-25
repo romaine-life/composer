@@ -139,3 +139,14 @@ func TestReplaceTurnsAWordIntoAnAtom(t *testing.T) {
 		t.Fatalf("one undo: %q", b.Value())
 	}
 }
+
+func TestReplaceStartingInsideAnAtomTakesItWhole(t *testing.T) {
+	b := atomBox(40, "x ⟦tmux.window⟧ z")
+	b.Replace(0, len("x ⟦tmux"), len("x ⟦tmux.window⟧"), "y")
+	if b.Value() != "x y z" {
+		t.Fatalf("value %q, want %q", b.Value(), "x y z")
+	}
+	if _, at := b.Position(); at != len("x y") {
+		t.Fatalf("cursor at %d, want %d", at, len("x y"))
+	}
+}
