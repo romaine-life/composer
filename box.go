@@ -31,7 +31,8 @@ const tabSpaces = "    "
 
 // Box is one message being written. Its zero value isn't usable; use New.
 type Box struct {
-	paras []string // The message's lines, which wrap to rows on screen.
+	paras []string // The message's lines, which wrap to rows on screen; set only by setParas.
+	text  int      // Counts changes to paras, for the layout to know it is stale.
 	line  int      // The cursor's paragraph.
 	pos   int      // The cursor's byte offset in it, always at a grapheme boundary.
 	goal  int      // The column Up and Down aim for, or -1 to take the cursor's.
@@ -45,6 +46,8 @@ type Box struct {
 	lastTyped  rune
 
 	atom *regexp.Regexp // What an atom is (SetAtoms), or nil for none.
+
+	layout *layout // The message as last laid out (laid), or nil before the first.
 }
 
 type snapshot struct {
@@ -92,7 +95,7 @@ func (b *Box) Empty() bool {
 // SetValue replaces the message, the cursor at its end, and starts a fresh undo
 // history: a draft brought back or a sent message cleared isn't an edit to undo.
 func (b *Box) SetValue(s string) {
-	b.paras = strings.Split(clean(s), "\n")
+	b.setParas(strings.Split(clean(s), "\n"))
 	b.line = len(b.paras) - 1
 	b.pos = len(b.paras[b.line])
 	b.goal = -1
@@ -199,7 +202,7 @@ func (b *Box) insert(s string) {
 	}
 	lines[0] = before + lines[0]
 	lines[last] += after
-	b.paras = slices.Replace(b.paras, b.line, b.line+1, lines...)
+	b.setParas(slices.Replace(b.paras, b.line, b.line+1, lines...))
 	b.line += last
 	b.changed()
 }
@@ -224,7 +227,8 @@ func (b *Box) snapshot() snapshot {
 }
 
 func (b *Box) restore(s snapshot) {
-	b.paras, b.line, b.pos = s.paras, s.line, s.pos
+	b.setParas(s.paras)
+	b.line, b.pos = s.line, s.pos
 	b.typing = false
 	b.changed()
 }
@@ -276,7 +280,7 @@ func (b *Box) remove(l1, p1, l2, p2 int) {
 		return
 	}
 	joined := b.paras[l1][:p1] + b.paras[l2][p2:]
-	b.paras = slices.Replace(b.paras, l1, l2+1, joined)
+	b.setParas(slices.Replace(b.paras, l1, l2+1, joined))
 	b.line, b.pos = l1, p1
 	b.changed()
 }

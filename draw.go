@@ -2,6 +2,7 @@ package composer
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -32,7 +33,8 @@ type cell struct {
 	col   int
 	width int
 	style tcell.Style
-	off   int // Its byte offset in the text it was placed from.
+	off   int  // Its byte offset in the text it was placed from.
+	atom  bool // It is part of an atom.
 }
 
 // shown lays out the rows on screen, each its graphemes within the box's width.
@@ -47,18 +49,34 @@ func (b *Box) shown(st Styles) [][]cell {
 	if atom == tcell.StyleDefault {
 		atom = st.Text
 	}
-	rows := b.rows()
+	l := b.laid()
 	for i := range h {
-		r := rows[b.top+i]
-		atoms := b.atomsIn(b.paras[r.para])
-		out[i] = cells(b.paras[r.para][r.start:r.end], b.width, st.Text)
+		out[i] = slices.Clone(b.placed(l, b.top+i))
 		for k, c := range out[i] {
-			if in(atoms, r.start+c.off) {
+			out[i][k].style = st.Text
+			if c.atom {
 				out[i][k].style = atom
 			}
 		}
 	}
 	return out
+}
+
+// placed is row i of layout l as cells, unstyled, placed once and kept with the
+// layout. An empty row has none, and costs nothing to place again.
+func (b *Box) placed(l *layout, i int) []cell {
+	if l.cells == nil {
+		l.cells = make([][]cell, len(l.rows))
+	}
+	if l.cells[i] == nil {
+		r := l.rows[i]
+		cs := cells(b.paras[r.para][r.start:r.end], b.width, tcell.StyleDefault)
+		for k, c := range cs {
+			cs[k].atom = in(l.atoms[r.para], r.start+c.off)
+		}
+		l.cells[i] = cs
+	}
+	return l.cells[i]
 }
 
 // cells places s's graphemes from column 0, up to w columns.
@@ -78,7 +96,7 @@ func cells(s string, w int, style tcell.Style) []cell {
 		if col+gw > w {
 			break
 		}
-		out = append(out, cell{g, col, gw, style, at})
+		out = append(out, cell{text: g, col: col, width: gw, style: style, off: at})
 		col += gw
 	}
 	return out
@@ -111,6 +129,15 @@ func (b *Box) View(st Styles, focused bool) string {
 		crow, ccol = b.Cursor()
 	}
 	var out strings.Builder
+	escapes := map[tcell.Style]string{} // Each style's escape, made once.
+	escape := func(style tcell.Style) string {
+		e, ok := escapes[style]
+		if !ok {
+			e = sgr(style)
+			escapes[style] = e
+		}
+		return e
+	}
 	for i, cs := range b.shown(st) {
 		if i > 0 {
 			out.WriteByte('\n')
@@ -121,14 +148,14 @@ func (b *Box) View(st Styles, focused bool) string {
 			if i == crow && c.col == ccol {
 				style = st.Cursor
 			}
-			out.WriteString(sgr(style) + c.text)
+			out.WriteString(escape(style) + c.text)
 			col = c.col + c.width
 		}
 		if i == crow && ccol >= col {
-			out.WriteString(sgr(st.Text) + strings.Repeat(" ", ccol-col) + sgr(st.Cursor) + " ")
+			out.WriteString(escape(st.Text) + strings.Repeat(" ", ccol-col) + escape(st.Cursor) + " ")
 			col = ccol + 1
 		}
-		out.WriteString(sgr(st.Text) + strings.Repeat(" ", max(0, b.width-col)) + "\x1b[0m")
+		out.WriteString(escape(st.Text) + strings.Repeat(" ", max(0, b.width-col)) + "\x1b[0m")
 	}
 	return out.String()
 }

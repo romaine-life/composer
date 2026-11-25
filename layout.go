@@ -1,6 +1,7 @@
 package composer
 
 import (
+	"regexp"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -19,15 +20,48 @@ func (b *Box) textWidth() int {
 	return max(1, b.width-1)
 }
 
-// rows lays the whole message out at the box's width.
-func (b *Box) rows() []row {
-	var all []row
+// layout is the message laid out, its rows and the cells they are drawn in: what
+// depends only on its text, the box's width and what an atom is. It is kept until
+// one of those changes, since an app asks for the box's height and cursor many
+// times a frame and wrapping a long message is the slow part.
+type layout struct {
+	text  int            // The text it was laid out from, as setParas counts.
+	width int            // The box's width it was laid out at.
+	atom  *regexp.Regexp // The atom pattern it was laid out with.
+	rows  []row
+	atoms [][][]int // Each paragraph's atoms (atomsIn).
+
+	cells [][]cell // Each row's cells (placed), filled as rows are first shown.
+}
+
+// setParas replaces the message's lines. Every change to the text goes through
+// it, so the layout knows the text is new.
+func (b *Box) setParas(paras []string) {
+	b.paras = paras
+	b.text++
+}
+
+// laid is the message laid out as it is now: the kept layout, or a new one when
+// the text, the width or the atom pattern has changed since.
+func (b *Box) laid() *layout {
+	if l := b.layout; l != nil && l.text == b.text && l.width == b.width && l.atom == b.atom {
+		return l
+	}
+	l := &layout{text: b.text, width: b.width, atom: b.atom, atoms: make([][][]int, len(b.paras))}
 	for i, p := range b.paras {
-		for _, s := range wrap(p, b.textWidth(), b.atomsIn(p)) {
-			all = append(all, row{i, s[0], s[1]})
+		l.atoms[i] = b.atomsIn(p)
+		for _, s := range wrap(p, b.textWidth(), l.atoms[i]) {
+			l.rows = append(l.rows, row{i, s[0], s[1]})
 		}
 	}
-	return all
+	b.layout = l
+	return l
+}
+
+// rows lays the whole message out at the box's width. The rows are shared with the
+// kept layout, so they are only read.
+func (b *Box) rows() []row {
+	return b.laid().rows
 }
 
 // wrap breaks a paragraph into rows no wider than w columns, at the places Unicode
@@ -41,6 +75,7 @@ func wrap(p string, w int, atoms [][]int) [][2]int {
 	start, col := 0, 0
 	brk, brkCol := -1, 0 // The last break opportunity in this row, and its column.
 	state, rest, off := -1, p, 0
+	a := 0 // The first atom not yet behind off: off only grows.
 	for len(rest) > 0 {
 		g, next, boundaries, st := uniseg.StepString(rest, state)
 		gw := boundaries >> uniseg.ShiftWidth
@@ -57,7 +92,11 @@ func wrap(p string, w int, atoms [][]int) [][2]int {
 		}
 		col += gw
 		off += len(g)
-		if _, _, in := within(atoms, off); !in && boundaries&uniseg.MaskLine == uniseg.LineCanBreak {
+		for a < len(atoms) && atoms[a][1] <= off {
+			a++
+		}
+		in := a < len(atoms) && atoms[a][0] < off
+		if !in && boundaries&uniseg.MaskLine == uniseg.LineCanBreak {
 			brk, brkCol = off, col
 		}
 		rest, state = next, st
